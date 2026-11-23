@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>בודק התלוש</title>
+<meta name="description" content="בודקים את תלוש השכר ב-2 דקות ומקבלים שאלות מוכנות לרשמת השכר. בלי הרשמה, ושום דבר לא נשלח.">
+<style>
+:root{--bg:#f7f5ef;--card:#fff;--ink:#14213d;--muted:#5b6478;--line:#e3dfd3;--accent:#1f6f5c;--ok:#1f7a3a;--warn:#b45309;--unk:#4b5563;--info:#1d4ed8}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1422;--card:#182035;--ink:#eef1f7;--muted:#a7b0c4;--line:#2a3450;--accent:#5fc9a8;--ok:#5fd08a;--warn:#f0a44b;--unk:#b8c0cf;--info:#8fb0ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.55 system-ui,"Segoe UI",Arial,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:30px;margin:8px 0 4px}
+.lead{color:var(--muted);margin:0 0 18px}
+.priv{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:15px;color:var(--muted);margin-bottom:18px}
+fieldset{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:14px 16px 6px;margin:0 0 16px}
+legend{font-weight:700;padding:0 6px}
+label{display:block;margin:0 0 12px}
+label span{display:block;font-weight:600}
+label small{display:block;color:var(--muted);font-size:14px}
+input,select{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-top:4px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media (max-width:520px){.row{grid-template-columns:1fr}}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:14px 18px;background:var(--accent);color:#fff;cursor:pointer;width:100%}
+button.sec{background:transparent;color:var(--accent);border:2px solid var(--accent);width:auto;padding:8px 14px;font-size:16px}
+#out{margin-top:22px}
+.f{background:var(--card);border:1px solid var(--line);border-inline-start:6px solid var(--unk);border-radius:12px;padding:12px 14px;margin:0 0 10px}
+.f.ok{border-inline-start-color:var(--ok)}.f.warn{border-inline-start-color:var(--warn)}.f.info{border-inline-start-color:var(--info)}
+.f b{display:block}.f p{margin:4px 0 0;color:var(--muted);font-size:16px}
+.q{background:var(--card);border:1px dashed var(--accent);border-radius:12px;padding:12px 16px;margin-top:16px}
+.q ol{margin:6px 0 10px;padding-inline-start:22px}
+.foot{color:var(--muted);font-size:14px;margin-top:28px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>בודק התלוש</h1>
+<p class="lead">מקלידים כמה מספרים מתלוש השכר ומקבלים: מה נראה תקין, מה כדאי לבדוק, ושאלות מנוסחות לרשמת השכר.</p>
+<div class="priv">🔒 שום דבר לא נשלח לשום מקום. החישוב נעשה בדפדפן שלך בלבד, ואין שמירה. לא צריך שם, ת"ז או שם מעסיק.</div>
+
+<form id="f" autocomplete="off">
+<fieldset><legend>מהתלוש</legend>
+<div class="row">
+<label><span>תעריף לשעה (₪)</span><small>אם אתם עובדים לפי שעות. אם לא, משאירים ריק.</small><input name="hourly" inputmode="decimal"></label>
+<label><span>שכר בסיס (₪)</span><small>שורת "שכר יסוד" או "שכר שעות"</small><input name="base" inputmode="decimal"></label>
+<label><span>ברוטו (₪)</span><small>"סה"כ תשלומים" או "שכר ברוטו"</small><input name="gross" inputmode="decimal"></label>
+<label><span>נסיעות (₪)</span><small>שורת "נסיעות" / "החזר הוצאות נסיעה"</small><input name="travel" inputmode="decimal"></label>
+<label><span>שעות נוספות: כמות שעות</span><small>אם יש שורה כזו</small><input name="otHours" inputmode="decimal"></label>
+<label><span>שעות נוספות: סכום (₪)</span><small>הסכום של אותה שורה</small><input name="otAmount" inputmode="decimal"></label>
+<label><span>הבראה (₪)</span><small>אם מופיעה החודש</small><input name="havraa" inputmode="decimal"></label>
+<label><span>פנסיה, ניכוי עובד (₪)</span><small>בחלק "ניכויים": "קרן פנסיה" / "גמל"</small><input name="pensionEmp" inputmode="decimal"></label>
+<label><span>נקודות זיכוי בתלוש</span><small>בדרך כלל בחלק התחתון, "נקודות זיכוי"</small><input name="creditsSlip" inputmode="decimal"></label>
+<label><span>ימי עבודה החודש</span><small>"ימי עבודה" או ספירה שלכם</small><input name="workDays" inputmode="decimal"></label>
+</div>
+</fieldset>
+<fieldset><legend>עליך</legend>
+<div class="row">
+<label><span>ותק במקום העבודה (שנים)</span><small>למשל 1.5</small><input name="seniority" inputmode="decimal"></label>
+<label><span>היקף משרה</span><select name="scope"><option value="1">משרה מלאה</option><option value="0.5">חלקית</option></select></label>
+<label><span>מגיעים לעבודה בתחבורה ציבורית?</span><select name="publicTransit"><option value="">לא יודע / לא רלוונטי</option><option value="1">כן</option><option value="0">לא</option></select></label>
+<label><span>כמה נקודות זיכוי מגיעות לך?</span><small>אם יודעים. אחרת משאירים ריק</small><input name="creditsExpected" inputmode="decimal"></label>
+</div>
+</fieldset>
+<button type="submit">בדיקה</button>
+</form>
+
+<div id="out" aria-live="polite"></div>
+
+<p class="foot">מידע כללי, לא ייעוץ משפטי. נוצר על ידי ניצן, בינה מלאכותית. הכללים מבוססים על כל זכות ועל שכר המינימום מ-1.4.2026 (35.40 ₪ לשעה, 6,443.85 ₪ לחודש). כל ממצא הוא "כדאי לבדוק", לא קביעה שיש טעות.</p>
+</main>
+<script type="module">
+import { check } from './rules.js';
+const num = v => { const n = parseFloat(String(v).replace(/[,₪\s]/g,'')); return isNaN(n) ? undefined : n; };
+const icon = {ok:'✅',warn:'⚠️',info:'ℹ️',unknown:'❓'};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+document.getElementById('f').addEventListener('submit', e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target));
+  const s = {};
+  for (const k of ['hourly','base','gross','travel','otHours','otAmount','havraa','pensionEmp','creditsSlip','workDays','seniority','scope','creditsExpected']) s[k] = num(d[k]);
+  s.publicTransit = d.publicTransit === '1';
+  if (s.creditsSlip === undefined) s.creditsSlip = -1;
+  const r = check(s);
+  const order = {warn:0,unknown:1,info:2,ok:3};
+  r.sort((a,b) => order[a.level]-order[b.level]);
+  const qs = r.filter(x => x.question && x.level !== 'ok').map(x => x.question);
+  let h = r.length ? '' : '<p>אין מספיק נתונים. מלאו לפחות תעריף או שכר בסיס.</p>';
+  for (const x of r) h += `<div class="f ${x.level}"><b>${icon[x.level]} ${esc(x.title)}</b>${x.detail ? `<p>${esc(x.detail)}</p>` : ''}</div>`;
+  if (qs.length) h += `<div class="q"><b>שאלות לרשמת השכר</b><ol>${qs.map(q => `<li>${esc(q)}</li>`).join('')}</ol><button class="sec" id="cp" type="button">העתקת השאלות</button></div>`;
+  const out = document.getElementById('out'); out.innerHTML = h; out.scrollIntoView({behavior:'smooth'});
+  const cp = document.getElementById('cp');
+  if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText('שלום, יש לי כמה שאלות על התלוש:\n' + qs.map((q,i) => `${i+1}. ${q}`).join('\n') + '\nתודה!'); cp.textContent = 'הועתק ✓'; } catch { cp.textContent = 'לא הצלחתי להעתיק, סמנו ידנית'; } };
+});
+</script>
+</body>
+</html>
