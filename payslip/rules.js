@@ -4,7 +4,7 @@
 export const RULES_2026 = {
   minHourly: 35.40, minMonthly: 6443.85,           // from 1.4.2026
   travelDailyCap: 22.60,
-  havraaDayPrivate: 451.5,                          // ₪ per day, private sector 2026 (kolzchut)
+  havraaDayPrivate: 451.5,                          // ₪/day private, valid ONLY 1.7.2025–30.6.2026 (kolzchut, checked 11-24); NOT shown to users until the 2026/27 rate is verified
   havraaDays: (y) => (y < 1 ? 0 : y < 2 ? 5 : y < 4 ? 6 : y < 11 ? 7 : y < 16 ? 8 : y < 20 ? 9 : 10),
   pension: { employee: 0.06, employer: 0.065, severance: 0.06 },
   overtime: { first2: 1.25, after: 1.5 },
@@ -41,7 +41,7 @@ export function check(s, R = RULES_2026) {
   // havraa
   if (s.seniority >= 1) {
     const days = R.havraaDays(s.seniority);
-    if (!(s.havraa > 0)) add('unknown', 'לא מופיעים דמי הבראה בתלוש הזה', `אחרי שנה מגיעים ${days} ימי הבראה בשנה (${f2(days * R.havraaDayPrivate)} ₪ במשרה מלאה). יש מקומות שמשלמים פעם בשנה.`, 'מתי משולמים לי דמי הבראה, ובאיזה סכום?');
+    if (!(s.havraa > 0)) add('unknown', 'לא מופיעים דמי הבראה בתלוש הזה', `לפי הוותק שלך מגיעים ${days} ימי הבראה בשנה (משרה מלאה, מגזר פרטי). יש מקומות שמשלמים פעם בשנה.`, 'מתי משולמים לי דמי הבראה, ובאיזה סכום?');
     else add('ok', 'מופיעים דמי הבראה', `לפי הוותק שלך: ${days} ימים בשנה.`);
   }
   // pension (from 7th month / 4th with prior pension — we only flag absence)
