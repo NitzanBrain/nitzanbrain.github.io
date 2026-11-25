@@ -15,6 +15,8 @@ const lb = (s) => new RegExp(`(?<![${HEB}a-zA-Z])(${s})`);  // leading boundary 
 
 const WISH = lb('אני רוצה ש|אני רוצה ל|באלי ש|באלי ל|בא לי ש|בא לי ל|הלוואי ש|הלוואי ו|תמיד רציתי|חולמת על|חלמתי ש|מתה על|רציתי ל|רציתי ש|מתה ל|אין לי זמן ל|הדבר היחיד שאני רוצה|בא לי סוף|בא לי ערב|בא לי טיול|בא לי חופשה|חייבים ללכת|חייבים לנסות|בוא נלך|בואי נלך|נלך ל|נטוס|הייתי רוצה');
 // Everyday wants that are not gift material (sleep, home, food right now, being with the partner right now)
+// Idioms and body/emotion states: never gift material (Shalom 2757: 'באלי להקיא' became a 'vomit' gift).
+export const IDIOM = /(להקיא|מקיא|למות|מתה מ|מת מ|לבכות|לצרוח|לצעוק|להתאבד|להיעלם|להעלם|לברוח|להשתגע|לצאת מדעת|לקבור|להרביץ|לרצוח|לחנוק|לשבור את|להתפוצץ|להתפרק|לישון שבוע|להעיף|לזרוק את הטלפון|לירות|להתעלף|להתבאס|לשרוף)/;
 const DULL = /((^|\s)לא (נ|א)|אולי בסוף|תכף|לישון|הביתה|הבייתה|לאכול|להתקלח|לנוח|להיות איתך|לראות אותך|לדבר איתך|ממך|עכשיו|היום|מחר בבוקר|לעבודה|לצאת מה)/;
 const PROMISE = wb('יום אחד|פעם נעשה|בפעם הבאה נ|כשנגור|כשיהיה לנו|אני מבטיח|אני מבטיחה|מבטיח לך|מבטיחה לך|הבטחתי|נעשה את זה|עוד נעשה|מתישהו נ');
 const LOVE = wb('אוהב אותך|אוהבת אותך|אוהב אותך מאוד|אוהבת אותך מאוד');
@@ -157,7 +159,7 @@ const TOPIC_RE = lb(Object.values(TOPICS).flat().join('|'));
 const OBSTACLE = lb('נשבר|נשברה|נשברו|התקלקל|התקלקלה|הרסתי|נגמר לי|נגמרה לי|נגמרו לי|איבדתי|אבד לי|נקרע|נקרעה|אין לי איך|אין לי איפה|אין לי מה ל|אבל אין לי|לא שרד|לא שרדה|לא שרדו|אבד|אבדה|כבר בן |כבר בת |אני צריך חדש|אני צריכה חדש|צריך חדשה|צריכה חדשה|מת לי ה|הישן שלי');
 const MASK = (s) => s.replace(/https?:\/\/\S+/g, '[קישור]').replace(/\S+@\S+\.\S+/g, '[מייל]').replace(/\d[\d\- ]{5,}\d/g, '[מספר]');
 export function digest(msgs, partner, maxSnippets = 90) {
-  const ok = (m) => m && clean(m);
+  const ok = (m) => m && clean(m) && !IDIOM.test(m.text);
   const hits = [];
   msgs.forEach((m, i) => {
     if (!ok(m) || m.text.split(/\s+/).length < 3) return;
@@ -210,9 +212,28 @@ function insideWords(msgs, partner) {
     .map(([w, s]) => `${w} (×${s.n}, ${s.days.size} ימים) — [${fmt(s.ex.t)}] ${s.ex.who}: ${MASK(s.ex.text)}`);
 }
 
+// Counts only (Shalom 2757): what the recipient keeps mentioning, as 'word ×N, D days'. No message text is sent.
+// The model decides which of these are concrete, giftable things (a comb, headphones, the sea) and ignores verbs/feelings.
+function repeated(msgs, partner, top = 30) {
+  const STOP = new Set('אני את אתה זה לא כן מה של על עם גם אבל או אז רק כל יש אין הוא היא אנחנו לי לך שלי שלך היה הייתי יותר טוב עוד כבר אם כי איך למה מתי איפה פה שם ככה מאוד ממש סתם אוקיי אוקי באמת נו עכשיו היום מחר אתמול בוקר לילה תודה סבבה יאללה בדרך אוהבת אוהב נשמע קורה ראית ההודעה בעבודה איזה יום אוכלים תכף רוצה רוצים צריך צריכה יודע יודעת חושב חושבת אומרת אומר אמרתי עושה עושים הולך הולכת באלי שאני שאתה שזה כמו אחרי לפני הכל משהו מישהו דברים פעם שוב אחד אחת שני שתי הרבה קצת'.split(' '));
+  const stat = {};
+  for (const m of msgs) {
+    if (m.who !== partner || MEDIA.test(m.text) || BLOCK.test(m.text) || HEALTH.test(m.text) || IDIOM.test(m.text)) continue;
+    const day = m.t.toDateString();
+    for (const w of new Set(m.text.split(/[^֐-׿a-zA-Z']+/))) {
+      if (w.length < 3 || w.length > 10 || STOP.has(w) || /^ח+$/.test(w)) continue;
+      const s = stat[w] || (stat[w] = { n: 0, days: new Set() });
+      s.n++; s.days.add(day);
+    }
+  }
+  return Object.entries(stat).filter(([, s]) => s.days.size >= 3)
+    .sort((a, b) => b[1].n - a[1].n).slice(0, top)
+    .map(([w, s]) => `${w} ×${s.n}, ב-${s.days.size} ימים שונים`);
+}
+
 // Parts: [{ sec, t }] so the page can list each snippet (and let the user remove it) and regroup by section on send.
 export function digest2Parts(msgs, partner, perSection = 25) {
-  const ok = (m) => m && clean(m) && !HEALTH.test(m.text);
+  const ok = (m) => m && clean(m) && !HEALTH.test(m.text) && !IDIOM.test(m.text);
   const sections = [
     ['מה לא לעשות: העדפות, איסורים, רגישויות (של הנמען)', (m) => m.who === partner && CONSTRAINT.test(m.text)],
     ['משאלות, מכשולים ודברים שנגמרו/נשברו (של הנמען)', (m) => m.who === partner && ((WISH.test(m.text) && !DULL.test(m.text)) || OBSTACLE.test(m.text))],
@@ -239,6 +260,7 @@ export function digest2Parts(msgs, partner, perSection = 25) {
     }
   }
   for (const t of insideWords(msgs, partner)) out.push({ sec: 'כינויים ובדיחות פנימיות (מילים ששניכם חוזרים עליהן)', t });
+  for (const t of repeated(msgs, partner)) out.push({ sec: 'דברים שהנמען חוזר עליהם (ספירה בלבד, בלי הודעות)', t });
   return out;
 }
 export function joinParts(parts) {
