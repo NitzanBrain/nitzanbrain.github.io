@@ -44,14 +44,23 @@ const ALIASES = [
   ['otHours', /שעות נוספות.*(כמות|שעות)|ש"נ.*כמות/], ['otAmount', /שעות נוספות|ש"נ 1[25]0%?/],
   ['base', /שכר (יסוד|בסיס)|משכורת בסיס|שכר שעות|שכר רגיל/], ['hourly', /תעריף (לשעה|שעתי|שעה)/],
   ['gross', /סה"?כ (ברוטו|תשלומים)|^ברוטו$|שכר ברוטו|ברוטו שוטף/], ['healthTax', /דמי בריאות|מס בריאות/], ['nationalIns', /ביטוח לאומי/], ['incomeTax', /^מס הכנסה/], ['net', /נטו לתשלום|^נטו$/], ['netPay', /שכר נטו/],
-  ['travel', /נסיעות|החזר (הוצאות )?נסיעה/], ['havraa', /הבראה/],
-  ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי|^נ\. זיכוי|^נ"ז/],
+  ['travel', /^(?!.*פנס)(?!.*פנסיה).*(נסיעות|החזר (הוצאות )?נסיעה)/], ['havraa', /הבראה/],
+  ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד|^(?!.*(מעסיק|נסיעות|נס-|פנס-))[^ ]+ פנסיה$/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי|^נ\. זיכוי|^נ"ז/],
   ['workDays', /ימי עבודה/], ['vacBal', /יתרת? (ימי )?חופשה/], ['sickBal', /יתרת? (ימי )?מחלה/],
 ];
 export function fieldFor(label) { for (const [f, re] of ALIASES) if (re.test(label)) return f; return null; }
 
 // Garbled text (fonts without a proper ToUnicode map) shows up as Latin-1 symbols instead of Hebrew.
 export const GARBLED = (str) => { const t = str.replace(/[\s\d.,%:'"\-]/g, ''); return t.length >= 3 && !HEB.test(t) && /[\u0080-\u02ff\u2010-\u2122\u2200-\u22ff]/.test(t); };
+// Some payroll PDFs (seen: ת.מ.ל., 2026-11) store Hebrew labels through a broken ToUnicode map: each Hebrew letter becomes a fixed
+// Latin-1/symbol character, in visual (reversed) order. Learned from a real slip, cross-checked against OCR of the same page.
+const GLYPH = { '“':'ת','º':'ו','Ã':'פ','»':'ס','«':'נ','…':'ע','¿':'י','∫':'ד','–':'ר','¬':'כ','—':'ש','ª':'ה','∑':'א','∏':'ב','æ':'ח','∆':'ן','œ':'ק','ø':'ט','≈':'מ','√':'ל' };
+export function decodeGarbled(str) {
+  const chars = [...str]; let known = 0, letters = 0;
+  const out = chars.map((c) => { if (/[\s\d.,%:'"\-]/.test(c)) return c; letters++; if (GLYPH[c]) { known++; return GLYPH[c]; } return '?'; });
+  if (!letters || known / letters < 0.8) return null;
+  return out.reverse().join('').replace(/(\d+(?:[.,]\d+)*)/g, (m) => [...m].reverse().join(''));  // digits were reversed with the text; restore them
+}
 // Split one visual row into segments: each label (non-number) owns the numbers that follow it (RTL) until the next label.
 export function segments(row) {
   const segs = []; let cur = null;
@@ -67,13 +76,14 @@ export function extract(items) {
   const fields = {}; const warnings = []; const seen = []; let garbled = 0;
   if (reversed) warnings.push('טקסט הפוך זוהה ותוקן. כדאי לוודא את השדות.');
   for (const r of rows) for (const sg of segments(r)) {
-    if (GARBLED(sg.label)) { if (sg.nums.length) garbled++; continue; }
+    if (GARBLED(sg.label)) { const d = decodeGarbled(sg.label); if (d && !d.includes('?')) sg.label = d; else { if (sg.nums.length) garbled++; continue; } }
     const f = sg.label && fieldFor(sg.label.trim());
     if (!f || !sg.nums.length) continue;
     seen.push({ field: f, label: sg.label, nums: sg.nums });
-    if (fields[f] !== undefined) { if (f !== 'net') warnings.push(`השדה "${sg.label}" הופיע פעמיים; נלקח הראשון.`); continue; }
+    if (fields[f] !== undefined) { if (f !== 'net' && f !== 'otAmount') warnings.push(`השדה "${sg.label}" הופיע פעמיים; נלקח הראשון.`); continue; }
     if (f === 'otHours') fields[f] = sg.nums[0]; else fields[f] = sg.nums[sg.nums.length - 1];
     if (f === 'otAmount' && sg.nums.length >= 2 && fields.otHours === undefined) fields.otHours = sg.nums[0];
+    if (f === 'base' && sg.nums.length >= 3 && fields.hourly === undefined) fields.hourly = sg.nums[1];  // [qty, rate, amount]
   }
   if (garbled) warnings.push(`${garbled} שורות בקובץ כתובות בגופן שלא ניתן לקרוא (כנראה שורות התשלומים). את השדות האלה צריך למלא ידנית.`);
   if (fields.gross && fields.net && fields.net > fields.gross) warnings.push('נטו גבוה מברוטו. ייתכן שהשדות התחלפו.');
