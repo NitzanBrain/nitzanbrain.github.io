@@ -302,9 +302,10 @@ $('go').addEventListener('click', () => {
     $('demoNote').classList.toggle('hide', live);
     $('out').innerHTML = (r.ideas || []).slice(0, 2).map((x, i) => card(x, i, false)).join('')
       + (r.ideas || []).slice(2).map((x, i) => card(x, i + 2, !live)).join('')
-      + (r.locked || []).map((t, i) => `<div class="icard lock"><span class="rank">#${i + 3}</span><h3>🔒 ${esc(t)}</h3><div class="w">פרטים, ציטוט ודרך נתינה: בדוח המלא</div></div>`).join('')
+      + (r.locked || []).map((t, i) => `<div class="icard lock"><span class="rank">#${i + 3}</span><h3>🔒 ${esc(t)}</h3><div class="w">פרטים, ההסבר ודרך נתינה: בדוח המלא</div></div>`).join('')
       + (r.personal_note ? `<div class="note ${live ? '' : 'lock'}"><b>✍️ הצעה לפתק</b>${esc(r.personal_note)}</div>` : '')
       + (live && r.note ? `<div class="small">${esc(r.note)}</div>` : '')
+      + ((r.ideas || []).length === 1 ? `<div class="small">מצאנו בשיחה רק רעיון אחד שאנחנו בטוחים בו. זה בסדר: רמז מעדיף רעיון אחד מדויק על פני כמה מנוחשים.</div>` : '')
       + (live && (r.ideas || []).length ? notesOut() : '');
     if (live && (r.ideas || []).length) bindNotes((r.ideas || []).map((x) => x.title));
     $('s4').classList.remove('hide');
