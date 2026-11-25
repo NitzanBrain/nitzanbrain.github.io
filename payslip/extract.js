@@ -42,29 +42,40 @@ export function rowsFrom(items, tol = 2.5) {
 // Label aliases -> field. Order matters: more specific first.
 const ALIASES = [
   ['otHours', /שעות נוספות.*(כמות|שעות)|ש"נ.*כמות/], ['otAmount', /שעות נוספות|ש"נ 1[25]0%?/],
-  ['base', /שכר (יסוד|בסיס)|משכורת בסיס|שכר שעות|שכר רגיל/], ['hourly', /תעריף (לשעה|שעתי)/],
-  ['gross', /סה"?כ (ברוטו|תשלומים)|^ברוטו$|שכר ברוטו|ברוטו שוטף/], ['net', /נטו לתשלום|שכר נטו|^נטו$/],
+  ['base', /שכר (יסוד|בסיס)|משכורת בסיס|שכר שעות|שכר רגיל/], ['hourly', /תעריף (לשעה|שעתי|שעה)/],
+  ['gross', /סה"?כ (ברוטו|תשלומים)|^ברוטו$|שכר ברוטו|ברוטו שוטף/], ['healthTax', /דמי בריאות|מס בריאות/], ['nationalIns', /ביטוח לאומי/], ['incomeTax', /^מס הכנסה/], ['net', /נטו לתשלום|^נטו$/], ['netPay', /שכר נטו/],
   ['travel', /נסיעות|החזר (הוצאות )?נסיעה/], ['havraa', /הבראה/],
-  ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי/],
+  ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי|^נ\. זיכוי|^נ"ז/],
   ['workDays', /ימי עבודה/], ['vacBal', /יתרת? (ימי )?חופשה/], ['sickBal', /יתרת? (ימי )?מחלה/],
 ];
 export function fieldFor(label) { for (const [f, re] of ALIASES) if (re.test(label)) return f; return null; }
 
+// Garbled text (fonts without a proper ToUnicode map) shows up as Latin-1 symbols instead of Hebrew.
+export const GARBLED = (str) => { const t = str.replace(/[\s\d.,%:'"\-]/g, ''); return t.length >= 3 && !HEB.test(t) && /[\u0080-\u02ff\u2010-\u2122\u2200-\u22ff]/.test(t); };
+// Split one visual row into segments: each label (non-number) owns the numbers that follow it (RTL) until the next label.
+export function segments(row) {
+  const segs = []; let cur = null;
+  for (const it of row.items) {
+    const v = parseNum(it.str);
+    if (v === null) { if (cur && cur.nums.length === 0) cur.label += ' ' + it.str; else { cur = { label: it.str, nums: [] }; segs.push(cur); } }
+    else if (cur) cur.nums.push(v);
+  }
+  return segs;
+}
 export function extract(items) {
   const { rows, reversed } = rowsFrom(items);
-  const fields = {}; const warnings = []; const seen = [];
+  const fields = {}; const warnings = []; const seen = []; let garbled = 0;
   if (reversed) warnings.push('טקסט הפוך זוהה ותוקן. כדאי לוודא את השדות.');
-  for (const r of rows) {
-    const label = r.items.filter((i) => parseNum(i.str) === null).map((i) => i.str).join(' ');
-    const nums = r.items.map((i) => parseNum(i.str)).filter((v) => v !== null);
-    const f = label && fieldFor(label);
-    if (!f || !nums.length) continue;
-    seen.push({ field: f, label, nums });
-    if (fields[f] !== undefined) { warnings.push(`השדה "${label}" הופיע פעמיים; נלקח הראשון.`); continue; }
-    // Table rows read RTL: [label, rate?, qty?, amount]. Amount = leftmost number = last in RTL order.
-    if (f === 'otHours') fields[f] = nums[0]; else fields[f] = nums[nums.length - 1];
-    if (f === 'otAmount' && nums.length >= 2 && fields.otHours === undefined) fields.otHours = nums[0]; // [qty, amount] on one row
+  for (const r of rows) for (const sg of segments(r)) {
+    if (GARBLED(sg.label)) { if (sg.nums.length) garbled++; continue; }
+    const f = sg.label && fieldFor(sg.label.trim());
+    if (!f || !sg.nums.length) continue;
+    seen.push({ field: f, label: sg.label, nums: sg.nums });
+    if (fields[f] !== undefined) { if (f !== 'net') warnings.push(`השדה "${sg.label}" הופיע פעמיים; נלקח הראשון.`); continue; }
+    if (f === 'otHours') fields[f] = sg.nums[0]; else fields[f] = sg.nums[sg.nums.length - 1];
+    if (f === 'otAmount' && sg.nums.length >= 2 && fields.otHours === undefined) fields.otHours = sg.nums[0];
   }
+  if (garbled) warnings.push(`${garbled} שורות בקובץ כתובות בגופן שלא ניתן לקרוא (כנראה שורות התשלומים). את השדות האלה צריך למלא ידנית.`);
   if (fields.gross && fields.net && fields.net > fields.gross) warnings.push('נטו גבוה מברוטו. ייתכן שהשדות התחלפו.');
   return { fields, rows: seen, reversed, warnings };
 }
