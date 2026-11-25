@@ -25,6 +25,9 @@ export function parseNum(t) {
   return (m[1] || m[3]) ? -v : v;
 }
 
+// "8/8" or "21/22" -> first number (worked). Dates like 10/2026 are rejected (second part > 31).
+export function frac(t) { const m = String(t).trim().match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/); return m && +m[2] <= 31 ? +m[1] : null; }
+
 export function rowsFrom(items, tol = 2.5) {
   const its = items.map((i) => ({ ...i, str: normalize(i.str) })).filter((i) => i.str);
   const reversed = detectReversed(its.map((i) => i.str).join(' '));
@@ -90,9 +93,10 @@ export function extract(items) {
   for (const r of rows) for (const it of r.items) {
     if (parseNum(it.str) !== null) continue;
     const f = fieldFor(it.str.trim()); if (!f || fields[f] !== undefined) continue;
-    const below = flat.filter((o) => o.ry < r.y && r.y - o.ry <= 20 && Math.abs(o.x - it.x) <= 30 && parseNum(o.str) !== null)
+    const val = (o) => parseNum(o.str) ?? (f === 'workDays' ? frac(o.str) : null);  // work days may read "8/8" (worked/standard)
+    const below = flat.filter((o) => o.ry < r.y && r.y - o.ry <= 20 && Math.abs(o.x - it.x) <= 30 && val(o) !== null)
       .sort((a, b) => (r.y - a.ry) - (r.y - b.ry) || Math.abs(a.x - it.x) - Math.abs(b.x - it.x))[0];
-    if (below) { fields[f] = parseNum(below.str); seen.push({ field: f, label: it.str, nums: [fields[f]], stacked: true }); }
+    if (below) { fields[f] = val(below); seen.push({ field: f, label: it.str, nums: [fields[f]], stacked: true }); }
   }
   if (garbled) warnings.push(`${garbled} שורות בקובץ כתובות בגופן שלא ניתן לקרוא (כנראה שורות התשלומים). את השדות האלה צריך למלא ידנית.`);
   if (fields.gross && fields.net && fields.net > fields.gross) warnings.push('נטו גבוה מברוטו. ייתכן שהשדות התחלפו.');
