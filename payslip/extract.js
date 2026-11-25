@@ -85,6 +85,15 @@ export function extract(items) {
     if (f === 'otAmount' && sg.nums.length >= 2 && fields.otHours === undefined) fields.otHours = sg.nums[0];
     if (f === 'base' && sg.nums.length >= 3 && fields.hourly === undefined) fields.hourly = sg.nums[1];  // [qty, rate, amount]
   }
+  // Stacked layout: a label with no numbers next to it, and its value directly below (same column, within ~20pt).
+  const flat = rows.flatMap((r) => r.items.map((it) => ({ ...it, ry: r.y })));
+  for (const r of rows) for (const it of r.items) {
+    if (parseNum(it.str) !== null) continue;
+    const f = fieldFor(it.str.trim()); if (!f || fields[f] !== undefined) continue;
+    const below = flat.filter((o) => o.ry < r.y && r.y - o.ry <= 20 && Math.abs(o.x - it.x) <= 30 && parseNum(o.str) !== null)
+      .sort((a, b) => (r.y - a.ry) - (r.y - b.ry) || Math.abs(a.x - it.x) - Math.abs(b.x - it.x))[0];
+    if (below) { fields[f] = parseNum(below.str); seen.push({ field: f, label: it.str, nums: [fields[f]], stacked: true }); }
+  }
   if (garbled) warnings.push(`${garbled} שורות בקובץ כתובות בגופן שלא ניתן לקרוא (כנראה שורות התשלומים). את השדות האלה צריך למלא ידנית.`);
   if (fields.gross && fields.net && fields.net > fields.gross) warnings.push('נטו גבוה מברוטו. ייתכן שהשדות התחלפו.');
   return { fields, rows: seen, reversed, warnings };
