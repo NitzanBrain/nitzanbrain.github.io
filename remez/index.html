@@ -256,7 +256,10 @@ $('file').addEventListener('change', async (e) => {
 document.getElementById('landCode').addEventListener('click', (e) => { e.preventDefault(); window.WANT_CODE = true; open(); });
 $('to3').addEventListener('click', () => {
   if (window.WANT_CODE) $('code3Box').classList.remove('hide');
-  snippets = digest2Parts(msgs, $('who').value).map((p) => ({ ...p, on: true }));
+  try { snippets = digest2Parts(msgs, $('who').value).map((p) => ({ ...p, on: true })); }
+  catch (e) { // show the error (no chat text) instead of a silent dead button
+    alert('משהו השתבש בקריאת הצ׳אט. צלמו את ההודעה הזו ושלחו לנו:\n' + String(e && e.name) + ': ' + String(e && e.message).slice(0, 120).replace(/[\u0590-\u05ff]+/g, '…'));
+    return; }
   render(); $('s3').classList.remove('hide'); step(3); $('s3').scrollIntoView({ behavior: 'smooth' });
 });
 function render() {
