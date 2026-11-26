@@ -45,10 +45,10 @@ export function rowsFrom(items, tol = 2.5) {
 // Label aliases -> field. Order matters: more specific first.
 const ALIASES = [
   ['otHours', /שעות נוספות.*(כמות|שעות)|ש"נ.*כמות/], ['otAmount', /שעות נוספות|ש"נ 1[25]0%?/],
-  ['base', /שכר (יסוד|בסיס)|משכורת בסיס|שכר שעות|שכר רגיל/], ['hourly', /תעריף (לשעה|שעתי|שעה)/],
+  ['base', /שכר (יסוד|בסיס)|משכורת בסיס|שכר שעות|שכר רגיל|^משכורת$/], ['hourly', /תעריף (לשעה|שעתי|שעה)/],
   ['gross', /סה"?כ (ברוטו|תשלומים)|^ברוטו$|שכר ברוטו|ברוטו שוטף/], ['healthTax', /דמי ?בריאות|מס בריאות/], ['nationalIns', /ביטוח לאומי/], ['incomeTax', /^מס הכנסה/], ['net', /נטו לתשלום|^נטו$/], ['netPay', /שכר נטו/],
   ['travel', /^(?!.*פנס)(?!.*פנסיה).*(נסיעות|החזר (הוצאות )?נסיעה)/], ['havraa', /הבראה/],
-  ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד|^(?!.*(מעסיק|נסיעות|נס-|פנס-))[^ ]+ פנסיה$/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי|^נ\. זיכוי|^נ"ז/],
+  ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד|^(?!.*(מעסיק|נסיעות|נס-|פנס-))[^ ]+ פנסיה$/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי|^נ\. זיכוי|^נ"ז|^נק\.? רגילות/],
   ['workDays', /ימי עבודה/], ['vacBal', /יתרת? (ימי )?חופשה/], ['sickBal', /יתרת? (ימי )?מחלה/],
 ];
 export function fieldFor(label) { for (const [f, re] of ALIASES) if (re.test(label)) return f; return null; }
@@ -72,17 +72,56 @@ export function segments(row) {
     const v = parseNum(it.str);
     // OCR items carry a width: two labels far apart (a header row of column titles) are separate labels, not one phrase.
     const far = prev && prev.w !== undefined && it.w !== undefined && prev.x - (it.x + it.w) > 12;
-    if (v === null) { if (cur && cur.nums.length === 0 && !far) cur.label += ' ' + it.str; else { cur = { label: it.str, nums: [] }; segs.push(cur); } }
+    if (v === null) { if (cur && cur.nums.length === 0 && !far) cur.label += ' ' + it.str; else { cur = { label: it.str, nums: [], x: it.x }; segs.push(cur); } }
     else if (cur) cur.nums.push(v);
     prev = it;
   }
   return segs;
 }
+// Hilan (חילן) slips: fixed column layout. Learned from 3 real slips (2026-11-26, Shalom's friend's; no personal data kept).
+// Columns (pdf points): rate ~340-350, percent ~290-300, qty ~255-270, amount ~195-212; summary box values x<100.
+export function hilan(rows) {
+  const has = (r, re) => r.items.some((i) => re.test(i.str));
+  const num = (r, lo, hi) => { const i = r.items.find((i) => i.x >= lo && i.x <= hi && parseNum(i.str) !== null); return i ? parseNum(i.str) : null; };
+  const find = (re, lo = -1e9, hi = 1e9) => rows.find((r) => r.items.some((i) => re.test(i.str) && i.x >= lo && i.x <= hi));
+  const f = {}; const set = (k, v) => { if (v !== null && v !== undefined && !Number.isNaN(v)) f[k] = Math.round(v * 100) / 100; };
+  let r;
+  if ((r = find(/סך-?\s*כל התשלומים/))) set('gross', num(r, 0, 100));
+  if ((r = find(/נטו לתשלום/, 0, 250))) set('net', num(r, 0, 100));
+  if ((r = find(/^שכר נטו$/, 0, 250))) set('netPay', num(r, 0, 100));
+  if ((r = find(/נקודות זיכוי/, 0, 250))) set('creditsSlip', num(r, 0, 100));
+  const yOf = (re) => { const x = find(re); return x ? x.y : null; };
+  const y1 = yOf(/^תשלומים בגין משרה$/), y2 = yOf(/סה"כ תשלומים בגין משרה/);
+  if (y1 !== null && y2 !== null) {
+    const job = rows.filter((x) => x.y < y1 && x.y > y2 && has(x, /^100%$/));
+    if (job.length) { set('base', job.reduce((a, x) => a + (num(x, 190, 215) || 0), 0)); set('hourly', num(job[0], 330, 360)); }
+  }
+  const y3 = yOf(/^תשלומים בגין שעות נוספות/), y4 = yOf(/סה"כ תשלומים בגין שעות נוספות/);
+  if (y4 !== null) set('otAmount', num(find(/סה"כ תשלומים בגין שעות נוספות/), 190, 215));
+  if (y3 !== null && y4 !== null) { const ot = rows.filter((x) => x.y < y3 && x.y > y4); if (ot.length) set('otHours', ot.reduce((a, x) => a + (num(x, 250, 272) || 0), 0)); }
+  if ((r = find(/הבראה/, 400))) set('havraa', num(r, 190, 215));
+  if ((r = find(/^נסיעות$/, 400))) set('travel', num(r, 190, 215));
+  const hdr = rows.find((x) => has(x, /^מס הכנסה$/) && has(x, /^ביטוח לאומי$/));
+  if (hdr) {
+    const below = rows.filter((x) => x.y < hdr.y && hdr.y - x.y <= 30).sort((a, b) => b.y - a.y);
+    const vals = below.find((x) => x.items.some((i) => i.x > 330 && parseNum(i.str) !== null));   // the values row (skip side-panel rows)
+    const under = (re) => { const h = hdr.items.find((i) => re.test(i.str)); if (!h || !vals) return null;
+      const v = vals.items.filter((i) => parseNum(i.str) !== null && Math.abs(i.x - h.x) <= 25).sort((a, b) => Math.abs(a.x - h.x) - Math.abs(b.x - h.x))[0]; return v ? parseNum(v.str) : 0; };
+    set('incomeTax', under(/^מס הכנסה$/)); set('nationalIns', under(/^ביטוח לאומי$/)); set('healthTax', under(/^ביטוח בריאות$/));
+  }
+  const pen = rows.filter((x) => has(x, /^קצבה/) && x.items.some((i) => /^קצבה/.test(i.str) && i.x > 400));
+  if (pen.length) set('pensionEmp', pen.reduce((a, x) => a + (num(x, 190, 215) || 0), 0));
+  return f;
+}
 export function extract(items) {
   const { rows, reversed } = rowsFrom(items);
   const fields = {}; const warnings = []; const seen = []; let garbled = 0;
   if (reversed) warnings.push('טקסט הפוך זוהה ותוקן. כדאי לוודא את השדות.');
+  // Year-to-date ("נתונים מצטברים") columns repeat field names with yearly totals: skip labels under that header.
+  const cum = rows.flatMap((r) => r.items.filter((i) => /^מצטברים$|^נתונים מצטברים$/.test(i.str)).map((i) => ({ x: i.x, y: r.y })))[0];
+  const inCum = (r, sg) => cum && r.y < cum.y && sg.x !== undefined && sg.x <= cum.x + 80 && sg.x >= cum.x - 110;
   for (const r of rows) for (const sg of segments(r)) {
+    if (inCum(r, sg)) continue;
     if (GARBLED(sg.label)) { const d = decodeGarbled(sg.label); if (d && !d.includes('?')) sg.label = d; else { if (sg.nums.length) garbled++; continue; } }
     const f = sg.label && fieldFor(sg.label.trim());
     if (!f || !sg.nums.length) continue;
@@ -106,6 +145,16 @@ export function extract(items) {
     if (below) { fields[f] = val(below); seen.push({ field: f, label: it.str, nums: [fields[f]], stacked: true }); }
   }
   if (fields.hourly !== undefined && (fields.hourly < 15 || fields.hourly > 600)) { warnings.push(`תעריף לשעה ${fields.hourly} לא נראה סביר, לא מילאתי אותו.`); delete fields.hourly; }
+  if (rows.some((r) => r.items.some((i) => /חילן/.test(i.str)))) {   // Hilan: the fixed-layout reader wins over the generic one
+    const months = rows.filter((r) => r.items.some((i) => /תלוש שכר לחודש/.test(i.str)));
+    const first = months.length ? months[0].y : null;
+    const page = first !== null ? rows.filter((r) => r.y <= first + 60 && r.y > first - 800) : rows;
+    const h = hilan(page);
+    for (const k of Object.keys(fields)) if (!(k in h) && !['vacBal', 'sickBal'].includes(k)) delete fields[k];
+    Object.assign(fields, h);
+    warnings.length = 0; warnings.push('זוהה תלוש של חילן. כדאי לוודא את השדות.');
+    if (months.length > 1) warnings.push(`בקובץ יש ${months.length} תלושים. נבדק רק הראשון.`);
+  }
   if (garbled) warnings.push(`${garbled} שורות בקובץ כתובות בגופן שלא ניתן לקרוא (כנראה שורות התשלומים). את השדות האלה צריך למלא ידנית.`);
   if (fields.gross && fields.net && fields.net > fields.gross) warnings.push('נטו גבוה מברוטו. ייתכן שהשדות התחלפו.');
   return { fields, rows: seen, reversed, warnings };
