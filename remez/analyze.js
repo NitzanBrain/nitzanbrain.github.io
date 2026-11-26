@@ -32,7 +32,7 @@ const TOPICS = {
   'חיות': ['כלב','חתול','ארנב','רקון','ראקון','סוס','פנדה','דולפין','למור'],
 };
 function topics(theirs) {
-  const out = {};
+  const out = Object.create(null);
   for (const [cat, words] of Object.entries(TOPICS)) {
     const counts = words.map((w) => {
       // whole word, allowing up to 2 one-letter prefixes (ו ה ב ל מ ש כ) and plural/possessive endings
@@ -64,7 +64,7 @@ const IDEAS = [
   [['משחק','פאזל'], 'משחק קופסה או פאזל עם תמונה שלכם'],
 ];
 function giftIdeas(tp, wishes) {
-  const counts = {};
+  const counts = Object.create(null);
   for (const ws of Object.values(tp)) for (const [w, n] of ws) counts[w] = n;
   const out = [];
   for (const [words, idea] of IDEAS) {
@@ -93,7 +93,7 @@ export function parse(text) {
 }
 
 export function people(msgs) {
-  const c = {};
+  const c = Object.create(null);
   for (const m of msgs) c[m.who] = (c[m.who] || 0) + 1;
   return Object.entries(c).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n }));
 }
@@ -122,12 +122,12 @@ export function analyze(msgs, partner) {
     .map((m) => ({ date: fmt(m.t), who: m.who, text: m.text }));
 
   // firsts
-  const firstLove = {};
+  const firstLove = Object.create(null);
   for (const m of msgs) if (clean(m) && LOVE.test(m.text) && !firstLove[m.who]) firstLove[m.who] = { date: fmt(m.t), text: m.text };
 
   // private words: frequent in this chat, rare in general Hebrew (crude: not in a small stoplist, length 2–8)
   const STOP = new Set('אני את אתה זה לא כן מה של על עם גם אבל או אז רק כל יש אין הוא היא אנחנו לי לך שלי שלך היה הייתי יותר טוב עוד כבר אם כי איך למה מתי איפה פה שם ככה מאוד ממש סתם אוקיי אוקי חח חחח חחחח באמת נו טוב עכשיו היום מחר אתמול'.split(' '));
-  const freq = {};
+  const freq = Object.create(null);
   for (const m of msgs) if (clean(m)) for (const w of m.text.split(/[^֐-׿a-zA-Z']+/)) {
     if (w.length < 2 || w.length > 8 || STOP.has(w) || /^ח+$/.test(w)) continue;
     freq[w] = (freq[w] || 0) + 1;
@@ -139,7 +139,7 @@ export function analyze(msgs, partner) {
   const ppl = people(msgs);
   const days = new Set(msgs.map((m) => m.t.toDateString())).size;
   const first = msgs[0]?.t, last = msgs[msgs.length - 1]?.t;
-  const perDay = {};
+  const perDay = Object.create(null);
   for (const m of msgs) perDay[m.t.toDateString()] = (perDay[m.t.toDateString()] || 0) + 1;
   const busiest = Object.entries(perDay).sort((a, b) => b[1] - a[1])[0];
 
@@ -194,7 +194,7 @@ const LAUGH = /ח{3,}|😂|🤣/;
 // Inside words: tokens both people use, on ≥3 different days, often with laughter or as a greeting → nicknames / running jokes.
 function insideWords(msgs, partner) {
   const STOP = new Set('אני את אתה זה לא כן מה של על עם גם אבל או אז רק כל יש אין הוא היא אנחנו לי לך שלי שלך היה הייתי יותר טוב עוד כבר אם כי איך למה מתי איפה פה שם ככה מאוד ממש סתם אוקיי אוקי באמת נו עכשיו היום מחר אתמול בוקר לילה תודה סבבה יאללה בדרך אוהבת אוהב נשמע קורה ראית ההודעה בעבודה גמורה ארוך איזה יום אוכלים תכף מתקשר בעצמך'.split(' '));
-  const stat = {};
+  const stat = Object.create(null);
   for (const m of msgs) {
     if (MEDIA.test(m.text) || BLOCK.test(m.text) || HEALTH.test(m.text)) continue;
     const day = m.t.toDateString(), laugh = LAUGH.test(m.text);
@@ -216,7 +216,7 @@ function insideWords(msgs, partner) {
 // The model decides which of these are concrete, giftable things (a comb, headphones, the sea) and ignores verbs/feelings.
 function repeated(msgs, partner, top = 30) {
   const STOP = new Set('אני את אתה זה לא כן מה של על עם גם אבל או אז רק כל יש אין הוא היא אנחנו לי לך שלי שלך היה הייתי יותר טוב עוד כבר אם כי איך למה מתי איפה פה שם ככה מאוד ממש סתם אוקיי אוקי באמת נו עכשיו היום מחר אתמול בוקר לילה תודה סבבה יאללה בדרך אוהבת אוהב נשמע קורה ראית ההודעה בעבודה איזה יום אוכלים תכף רוצה רוצים צריך צריכה יודע יודעת חושב חושבת אומרת אומר אמרתי עושה עושים הולך הולכת באלי שאני שאתה שזה כמו אחרי לפני הכל משהו מישהו דברים פעם שוב אחד אחת שני שתי הרבה קצת'.split(' '));
-  const stat = {};
+  const stat = Object.create(null);
   for (const m of msgs) {
     if (m.who !== partner || MEDIA.test(m.text) || BLOCK.test(m.text) || HEALTH.test(m.text) || IDIOM.test(m.text)) continue;
     const day = m.t.toDateString();
