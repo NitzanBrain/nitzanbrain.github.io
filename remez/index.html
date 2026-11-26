@@ -410,7 +410,7 @@ async function initTurnstile() {
     const { turnstile_sitekey } = await fetch(API_URL + '/api/config').then((r) => r.json());
     const go = () => { tsId = turnstile.render('#ts', { sitekey: turnstile_sitekey,
       callback: (t) => { tsToken = t; canGo(); }, 'expired-callback': () => { tsToken = ''; canGo(); }, 'error-callback': () => { tsToken = ''; canGo(); } }); };
-    const wait = () => (window.turnstile ? turnstile.ready(go) : setTimeout(wait, 200)); wait();
+    const wait = () => (window.turnstile && window.turnstile.render ? go() : setTimeout(wait, 200)); wait(); // no turnstile.ready(): it throws when api.js is loaded async/defer
   } catch { $('limitMsg').textContent = 'השירות לא זמין כרגע. נסו שוב בעוד כמה דקות.'; $('limitMsg').classList.remove('hide'); }
 }
 initTurnstile();
