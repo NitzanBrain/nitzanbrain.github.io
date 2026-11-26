@@ -19,6 +19,7 @@ legend{font-weight:700;padding:0 6px}
 label{display:block;margin:0 0 12px}
 label span{display:block;font-weight:600}
 label small{display:block;color:var(--muted);font-size:14px}
+input.ocr{background:#fff6c8;color:#222}.okw{display:flex;gap:8px;align-items:center;margin:0 0 12px}.okw input{width:auto;margin:0}
 input,select{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-top:4px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
 @media (max-width:520px){.row{grid-template-columns:1fr}}
@@ -39,8 +40,8 @@ button.sec{background:transparent;color:var(--accent);border:2px solid var(--acc
 <p class="lead">מקלידים כמה מספרים מתלוש השכר ומקבלים: מה נראה תקין, מה כדאי לבדוק, ושאלות מנוסחות לרשמת השכר.</p>
 <div class="priv">🔒 שום דבר לא נשלח לשום מקום. החישוב נעשה בדפדפן שלך בלבד, ואין שמירה. לא צריך שם, ת"ז או שם מעסיק.</div>
 
-<fieldset><legend>אפשרות מהירה: להעלות את התלוש (PDF)</legend>
-<label><span>קובץ PDF של התלוש</span><small>הקובץ נקרא רק בדפדפן שלך ולא נשלח לשום מקום. גרסת ניסיון: אחרי הקריאה בודקים שהמספרים נכונים.</small><input type="file" id="pdf" accept="application/pdf"></label>
+<fieldset><legend>אפשרות מהירה: להעלות את התלוש</legend>
+<label><span>קובץ PDF, צילום מסך או תמונה של התלוש</span><small>הקובץ נקרא רק בדפדפן שלך ולא נשלח לשום מקום. גרסת ניסיון: אחרי הקריאה בודקים שהמספרים נכונים. PDF נקרא הכי מדויק. בצילום: כל התלוש בתמונה, ישר וחד.</small><input type="file" id="pdf" accept="application/pdf,image/*"></label>
 <p id="pdfmsg" class="lead" aria-live="polite"></p>
 </fieldset>
 
@@ -67,6 +68,7 @@ button.sec{background:transparent;color:var(--accent);border:2px solid var(--acc
 <label><span>כמה נקודות זיכוי מגיעות לך?</span><small>אם יודעים. אחרת משאירים ריק</small><input name="creditsExpected" inputmode="decimal"></label>
 </div>
 </fieldset>
+<label id="okwrap" class="okw" hidden><input type="checkbox" id="okocr"> <span>בדקתי את המספרים המסומנים בצהוב מול התלוש, ותיקנתי מה שצריך</span></label>
 <button type="submit">בדיקה</button>
 </form>
 
@@ -76,11 +78,42 @@ button.sec{background:transparent;color:var(--accent);border:2px solid var(--acc
 </main>
 <script type="module">
 import { check } from './rules.js';
-import { extract } from './extract.js';
+import { extract, ocrItems } from './extract.js';
 const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/';
+const fill = (fields, warnings, fromImage) => {
+  const f = document.getElementById('f'); let n = 0;
+  for (const [k, v] of Object.entries(fields)) { const el = f.elements[k]; if (el && v !== undefined) { el.value = v; n++; if (fromImage) el.classList.add('ocr'); } }
+  if (fromImage && n) { document.getElementById('okwrap').hidden = false; document.getElementById('okocr').checked = false; }
+  return n;
+};
+// Screenshot/photo: upscale small images, then OCR twice (Hebrew for labels, English for digits). Runs in the browser.
+async function readImage(file, msg) {
+  const img = await createImageBitmap(file);
+  const scale = Math.min(4, Math.max(1, Math.ceil(1800 / img.width)));
+  const c = document.createElement('canvas'); c.width = img.width * scale; c.height = img.height * scale;
+  const g = c.getContext('2d'); g.filter = 'grayscale(1) contrast(1.3)'; g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, c.width, c.height);
+  const T = await import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.esm.min.js');
+  const words = async (lang, label) => {
+    const w = await T.default.createWorker(lang, 1, { logger: (m) => { if (m.status === 'recognizing text') msg.textContent = `${label} ${Math.round(m.progress * 100)}%`; } });
+    const { data } = await w.recognize(c, {}, { blocks: true }); await w.terminate();
+    const out = []; for (const b of data.blocks || []) for (const p of b.paragraphs) for (const l of p.lines) out.push(...l.words); return out;
+  };
+  msg.textContent = 'טוען את קורא התמונות (פעם ראשונה לוקח כחצי דקה)…';
+  const heb = await words('heb', 'קורא מילים…'); const eng = await words('eng', 'קורא מספרים…');
+  return ocrItems(heb, eng, c.width);
+}
+document.getElementById('f').addEventListener('input', (e) => e.target.classList?.remove('ocr'));
 document.getElementById('pdf').addEventListener('change', async (ev) => {
   const msg = document.getElementById('pdfmsg'); const file = ev.target.files[0]; if (!file) return;
   msg.textContent = 'קורא את התלוש…';
+  if (file.type.startsWith('image/')) {
+    try {
+      const { fields, warnings } = extract(await readImage(file, msg));
+      const n = fill(fields, warnings, true);
+      msg.textContent = n ? `קראתי ${n} מספרים מהתמונה. קריאה מתמונה יכולה לטעות: בדקו כל שדה צהוב מול התלוש, השלימו את מה שחסר, סמנו "בדקתי" ולחצו "בדיקה".` + (warnings.length ? ' ⚠️ ' + warnings.join(' ') : '') : 'לא הצלחתי לקרוא מספרים מהתמונה. נסו צילום חד יותר, PDF, או מלאו ידנית למטה.';
+    } catch (e) { msg.textContent = 'לא הצלחתי לקרוא את התמונה. אפשר להעלות PDF או למלא ידנית למטה.'; }
+    return;
+  }
   try {
     const pdfjs = await import(PDFJS + 'pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs';
@@ -92,8 +125,7 @@ document.getElementById('pdf').addEventListener('change', async (ev) => {
     }
     if (!items.some((i) => i.str.trim())) { msg.textContent = 'בקובץ הזה אין טקסט (כנראה תמונה סרוקה). אפשר למלא את המספרים ידנית למטה.'; return; }
     const { fields, warnings } = extract(items);
-    const f = document.getElementById('f'); let n = 0;
-    for (const [k, v] of Object.entries(fields)) { const el = f.elements[k]; if (el && v !== undefined) { el.value = v; n++; } }
+    const n = fill(fields, warnings, false);
     msg.textContent = n ? `מילאתי ${n} שדות מהתלוש. בדקו שהם נכונים, השלימו את מה שחסר ולחצו "בדיקה".` + (warnings.length ? ' ⚠️ ' + warnings.join(' ') : '') : 'לא הצלחתי לזהות שדות בתלוש הזה. אפשר למלא ידנית למטה.';
   } catch (e) { msg.textContent = 'לא הצלחתי לקרוא את הקובץ. אפשר למלא ידנית למטה.'; }
 });
@@ -102,6 +134,7 @@ const icon = {ok:'✅',warn:'⚠️',info:'ℹ️',unknown:'❓'};
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 document.getElementById('f').addEventListener('submit', e => {
   e.preventDefault();
+  if (!document.getElementById('okwrap').hidden && !document.getElementById('okocr').checked) { const out = document.getElementById('out'); out.innerHTML = '<div class="f warn"><b>⚠️ רגע לפני הבדיקה</b><p>המספרים נקראו מתמונה. בדקו את השדות הצהובים מול התלוש וסמנו "בדקתי".</p></div>'; document.getElementById('okwrap').scrollIntoView({behavior:'smooth', block:'center'}); return; }
   const d = Object.fromEntries(new FormData(e.target));
   const s = {};
   for (const k of ['hourly','base','gross','travel','otHours','otAmount','havraa','pensionEmp','creditsSlip','workDays','seniority','scope','creditsExpected']) s[k] = num(d[k]);

@@ -46,7 +46,7 @@ export function rowsFrom(items, tol = 2.5) {
 const ALIASES = [
   ['otHours', /שעות נוספות.*(כמות|שעות)|ש"נ.*כמות/], ['otAmount', /שעות נוספות|ש"נ 1[25]0%?/],
   ['base', /שכר (יסוד|בסיס)|משכורת בסיס|שכר שעות|שכר רגיל/], ['hourly', /תעריף (לשעה|שעתי|שעה)/],
-  ['gross', /סה"?כ (ברוטו|תשלומים)|^ברוטו$|שכר ברוטו|ברוטו שוטף/], ['healthTax', /דמי בריאות|מס בריאות/], ['nationalIns', /ביטוח לאומי/], ['incomeTax', /^מס הכנסה/], ['net', /נטו לתשלום|^נטו$/], ['netPay', /שכר נטו/],
+  ['gross', /סה"?כ (ברוטו|תשלומים)|^ברוטו$|שכר ברוטו|ברוטו שוטף/], ['healthTax', /דמי ?בריאות|מס בריאות/], ['nationalIns', /ביטוח לאומי/], ['incomeTax', /^מס הכנסה/], ['net', /נטו לתשלום|^נטו$/], ['netPay', /שכר נטו/],
   ['travel', /^(?!.*פנס)(?!.*פנסיה).*(נסיעות|החזר (הוצאות )?נסיעה)/], ['havraa', /הבראה/],
   ['pensionEmp', /(קרן )?פנסיה.*עובד|ניכוי.*פנסיה|גמל.*עובד|^(?!.*(מעסיק|נסיעות|נס-|פנס-))[^ ]+ פנסיה$/], ['creditsSlip', /נקודות זיכוי|נק' זיכוי|^נ\. זיכוי|^נ"ז/],
   ['workDays', /ימי עבודה/], ['vacBal', /יתרת? (ימי )?חופשה/], ['sickBal', /יתרת? (ימי )?מחלה/],
@@ -67,10 +67,14 @@ export function decodeGarbled(str) {
 // Split one visual row into segments: each label (non-number) owns the numbers that follow it (RTL) until the next label.
 export function segments(row) {
   const segs = []; let cur = null;
+  let prev = null;
   for (const it of row.items) {
     const v = parseNum(it.str);
-    if (v === null) { if (cur && cur.nums.length === 0) cur.label += ' ' + it.str; else { cur = { label: it.str, nums: [] }; segs.push(cur); } }
+    // OCR items carry a width: two labels far apart (a header row of column titles) are separate labels, not one phrase.
+    const far = prev && prev.w !== undefined && it.w !== undefined && prev.x - (it.x + it.w) > 12;
+    if (v === null) { if (cur && cur.nums.length === 0 && !far) cur.label += ' ' + it.str; else { cur = { label: it.str, nums: [] }; segs.push(cur); } }
     else if (cur) cur.nums.push(v);
+    prev = it;
   }
   return segs;
 }
@@ -86,7 +90,10 @@ export function extract(items) {
     if (fields[f] !== undefined) { if (f !== 'net' && f !== 'otAmount') warnings.push(`השדה "${sg.label}" הופיע פעמיים; נלקח הראשון.`); continue; }
     if (f === 'otHours') fields[f] = sg.nums[0]; else fields[f] = sg.nums[sg.nums.length - 1];
     if (f === 'otAmount' && sg.nums.length >= 2 && fields.otHours === undefined) fields.otHours = sg.nums[0];
-    if (f === 'base' && sg.nums.length >= 3 && fields.hourly === undefined) fields.hourly = sg.nums[1];  // [qty, rate, amount]
+    if (f === 'base' && sg.nums.length >= 3) {  // [qty, rate, amount]; if qty x rate = amount, that rate wins over a header value (OCR drops dots: 50.00 -> 5000)
+      const [q, rate, amt] = sg.nums.slice(-3);
+      if (Math.abs(q * rate - amt) < 1) fields.hourly = rate; else if (fields.hourly === undefined) fields.hourly = sg.nums[1];
+    }
   }
   // Stacked layout: a label with no numbers next to it, and its value directly below (same column, within ~20pt).
   const flat = rows.flatMap((r) => r.items.map((it) => ({ ...it, ry: r.y })));
@@ -98,7 +105,24 @@ export function extract(items) {
       .sort((a, b) => (r.y - a.ry) - (r.y - b.ry) || Math.abs(a.x - it.x) - Math.abs(b.x - it.x))[0];
     if (below) { fields[f] = val(below); seen.push({ field: f, label: it.str, nums: [fields[f]], stacked: true }); }
   }
+  if (fields.hourly !== undefined && (fields.hourly < 15 || fields.hourly > 600)) { warnings.push(`תעריף לשעה ${fields.hourly} לא נראה סביר, לא מילאתי אותו.`); delete fields.hourly; }
   if (garbled) warnings.push(`${garbled} שורות בקובץ כתובות בגופן שלא ניתן לקרוא (כנראה שורות התשלומים). את השדות האלה צריך למלא ידנית.`);
   if (fields.gross && fields.net && fields.net > fields.gross) warnings.push('נטו גבוה מברוטו. ייתכן שהשדות התחלפו.');
   return { fields, rows: seen, reversed, warnings };
+}
+
+// Screenshots/photos (2026-11-26): OCR in two passes. The Hebrew model reads labels well but mangles digits
+// (seen: 2,058.00 -> "9000"); the English model reads digits well. Labels from 'heb', numbers from 'eng'.
+// words: tesseract.js word objects {text, confidence, bbox:{x0,y0,x1,y1}} (pixels, y down). Output: items for extract().
+export function ocrItems(hebWords, engWords, width) {
+  const k = 595 / (width || 1);  // pixels -> A4 points, so extract()'s tolerances still fit
+  const pos = (w) => ({ x: w.bbox.x0 * k, w: (w.bbox.x1 - w.bbox.x0) * k, y: -((w.bbox.y0 + w.bbox.y1) / 2) * k });
+  const clean = (t) => String(t).replace(/^[^\d\-₪]+|[^\d.\-]+$/g, '');
+  const labels = hebWords.filter((w) => w.confidence > 30 && !/\d/.test(w.text) && /[֐-׿"'%]/.test(w.text)).map((w) => ({ str: w.text, ...pos(w) }));
+  // The English pass also turns Hebrew words into fake numbers (seen: "שעות נוספות" -> "119011"). Drop a number whose centre sits inside a Hebrew word.
+  const hebBoxes = hebWords.filter((w) => !/\d/.test(w.text) && /[֐-׿]/.test(w.text)).map((w) => w.bbox);
+  const inHeb = (b) => { const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2; return hebBoxes.some((h) => cx >= h.x0 && cx <= h.x1 && cy >= h.y0 && cy <= h.y1); };
+  const nums = engWords.filter((w) => w.confidence > 30 && !inHeb(w.bbox) && parseNum(clean(w.text)) !== null && /^[\d,.\-₪:]+$/.test(w.text.replace(/[|\[\]]/g, '')))
+    .map((w) => ({ str: clean(w.text), ...pos(w) }));
+  return [...labels, ...nums];
 }
